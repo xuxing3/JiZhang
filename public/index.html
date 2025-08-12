@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>My Expenses</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Vue 3 via CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        margin: 0;
+        background: #f6f7fb;
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: 24px auto;
+        padding: 0 16px;
+      }
+      .card {
+        background: #fff;
+        border-radius: 14px;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: 10px 8px;
+        border-bottom: 1px solid #eee;
+        vertical-align: middle;
+      }
+      th {
+        text-align: left;
+        font-weight: 600;
+        color: #222;
+      }
+      input,
+      select {
+        padding: 6px 8px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        outline: none;
+      }
+      input[type="number"] {
+        width: 110px;
+      }
+      .btn {
+        padding: 6px 10px;
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        background: #fff;
+        cursor: pointer;
+      }
+      .btn:hover {
+        background: #f0f3f7;
+      }
+      .btn.primary {
+        border-color: #3451e8;
+      }
+      .btn.danger {
+        border-color: #e3342f;
+      }
+      .row-actions {
+        display: flex;
+        gap: 6px;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      .totals {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+      .pill {
+        background: #eef2ff;
+        color: #223;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 13px;
+      }
+      .muted {
+        color: #666;
+        font-size: 12px;
+      }
+      .nowrap {
+        white-space: nowrap;
+      }
+      .right {
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app" class="wrap">
+      <div class="card">
+        <div class="toolbar">
+          <div>
+            <label>Month:&nbsp;</label>
+            <input type="month" v-model="month" @change="reload" />
+          </div>
+          <div>
+            <input
+              placeholder="Search payee/category/note"
+              v-model.trim="q"
+              @keyup.enter="reload"
+            />
+            <button class="btn" @click="reload">Search</button>
+          </div>
+          <div class="muted">Showing {{expenses.length}} / {{total}} items</div>
+          <div style="margin-left: auto">
+            <button class="btn" @click="prevPage" :disabled="page<=1">
+              Prev
+            </button>
+            <span class="muted">Page {{page}} / {{pages}}</span>
+            <button class="btn" @click="nextPage" :disabled="page>=pages">
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin: 0 0 12px">Add Expense</h3>
+        <div class="toolbar">
+          <input type="datetime-local" v-model="newItem.time" />
+          <input
+            type="number"
+            step="0.01"
+            placeholder="Amount"
+            v-model.number="newItem.amount"
+          />
+          <input placeholder="Category" v-model.trim="newItem.category" />
+          <input placeholder="Payee" v-model.trim="newItem.payee" />
+          <input
+            placeholder="Note"
+            v-model.trim="newItem.note"
+            style="min-width: 240px"
+          />
+          <button class="btn primary" @click="create">Add</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="totals" v-if="categorySummary.length">
+          <div v-for="c in categorySummary" :key="c.category" class="pill">
+            {{c.category}}: {{fmtMoney(c.total)}} ({{c.count}})
+          </div>
+          <div class="pill" style="background: #e6ffed">
+            Month Total: {{fmtMoney(monthTotal)}}
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th class="nowrap">Time</th>
+              <th class="right">Amount</th>
+              <th>Category</th>
+              <th>Payee</th>
+              <th>Note</th>
+              <th class="nowrap">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in expenses" :key="row._id">
+              <td class="nowrap">
+                <template v-if="row._editing">
+                  <input type="datetime-local" v-model="row._edit.time" />
+                </template>
+                <template v-else>{{ fmtDate(row.time) }}</template>
+              </td>
+              <td class="right">
+                <template v-if="row._editing">
+                  <input
+                    type="number"
+                    step="0.01"
+                    v-model.number="row._edit.amount"
+                  />
+                </template>
+                <template v-else>{{ fmtMoney(row.amount) }}</template>
+              </td>
+              <td>
+                <template v-if="row._editing">
+                  <input v-model="row._edit.category" />
+                </template>
+                <template v-else
+                  >{{ row.category || 'Uncategorized' }}</template
+                >
+              </td>
+              <td>
+                <template v-if="row._editing">
+                  <input v-model="row._edit.payee" />
+                </template>
+                <template v-else>{{ row.payee }}</template>
+              </td>
+              <td>
+                <template v-if="row._editing">
+                  <input v-model="row._edit.note" style="min-width: 240px" />
+                </template>
+                <template v-else>{{ row.note }}</template>
+              </td>
+              <td>
+                <div class="row-actions" v-if="!row._editing">
+                  <button class="btn" @click="beginEdit(row)">Edit</button>
+                  <button class="btn danger" @click="del(row)">Delete</button>
+                </div>
+                <div class="row-actions" v-else>
+                  <button class="btn primary" @click="save(row)">Save</button>
+                  <button class="btn" @click="cancel(row)">Cancel</button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="!expenses.length">
+              <td colspan="6" class="muted">No data</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      const { createApp, ref, computed } = Vue;
+
+      createApp({
+        setup() {
+          const API_BASE = ""; // same-origin (served by Express). If different host, set like "http://localhost:3000"
+          const API_KEY = ""; // optional: if you set API_KEY in server .env, put it here too
+
+          const headers = () => {
+            const h = { "Content-Type": "application/json" };
+            if (API_KEY) h["x-api-key"] = API_KEY;
+            return h;
+          };
+
+          const month = ref(new Date().toISOString().slice(0, 7)); // YYYY-MM
+          const q = ref("");
+          const page = ref(1);
+          const limit = ref(50);
+          const expenses = ref([]);
+          const total = ref(0);
+          const pages = ref(1);
+
+          const newItem = ref({
+            time: new Date().toISOString().slice(0, 16), // yyyy-mm-ddThh:mm
+            amount: null,
+            category: "",
+            payee: "",
+            note: "",
+          });
+
+          const categorySummary = ref([]);
+          const monthTotal = computed(() =>
+            categorySummary.value.reduce((s, c) => s + (c.total || 0), 0)
+          );
+
+          function rangeFromMonth(ym) {
+            // ym = "YYYY-MM"
+            const [y, m] = ym.split("-").map((n) => parseInt(n, 10));
+            const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
+            const end = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999)); // end of month
+            return { start: start.toISOString(), end: end.toISOString() };
+          }
+
+          async function reload() {
+            const { start, end } = rangeFromMonth(month.value);
+            const url = new URL(
+              API_BASE + "/api/expenses",
+              window.location.origin
+            );
+            url.searchParams.set("start", start);
+            url.searchParams.set("end", end);
+            url.searchParams.set("page", page.value);
+            url.searchParams.set("limit", limit.value);
+            if (q.value) url.searchParams.set("q", q.value);
+
+            const res = await fetch(url, { headers: headers() });
+            if (!res.ok) {
+              alert("Fetch failed");
+              return;
+            }
+            const json = await res.json();
+            total.value = json.total;
+            pages.value = json.pages;
+            expenses.value = json.data.map((row) => ({
+              ...row,
+              _editing: false,
+              _edit: null,
+            }));
+
+            // summary
+            const su = new URL(
+              API_BASE + "/api/stats/category",
+              window.location.origin
+            );
+            su.searchParams.set("start", start);
+            su.searchParams.set("end", end);
+            const res2 = await fetch(su, { headers: headers() });
+            categorySummary.value = res2.ok ? await res2.json() : [];
+          }
+
+          async function create() {
+            if (!newItem.value.amount || !newItem.value.time)
+              return alert("amount & time required");
+            const body = {
+              ...newItem.value,
+              amount: Number(newItem.value.amount),
+              source: "web",
+            };
+            const res = await fetch(API_BASE + "/api/expenses", {
+              method: "POST",
+              headers: headers(),
+              body: JSON.stringify(body),
+            });
+            if (!res.ok) return alert("Create failed");
+            // reset some fields
+            newItem.value.amount = null;
+            newItem.value.payee = "";
+            newItem.value.note = "";
+            await reload();
+          }
+
+          function beginEdit(row) {
+            row._editing = true;
+            row._edit = {
+              time: (row.time || "").slice(0, 16), // to datetime-local
+              amount: row.amount,
+              category: row.category || "",
+              payee: row.payee || "",
+              note: row.note || "",
+            };
+          }
+          function cancel(row) {
+            row._editing = false;
+            row._edit = null;
+          }
+          async function save(row) {
+            const body = { ...row._edit, amount: Number(row._edit.amount) };
+            const res = await fetch(API_BASE + "/api/expenses/" + row._id, {
+              method: "PATCH",
+              headers: headers(),
+              body: JSON.stringify(body),
+            });
+            if (!res.ok) return alert("Update failed");
+            row._editing = false;
+            row._edit = null;
+            await reload();
+          }
+          async function del(row) {
+            if (!confirm("Delete this expense?")) return;
+            const res = await fetch(API_BASE + "/api/expenses/" + row._id, {
+              method: "DELETE",
+              headers: headers(),
+            });
+            if (!res.ok) return alert("Delete failed");
+            await reload();
+          }
+
+          function prevPage() {
+            if (page.value > 1) {
+              page.value--;
+              reload();
+            }
+          }
+          function nextPage() {
+            if (page.value < pages.value) {
+              page.value++;
+              reload();
+            }
+          }
+
+          function fmtDate(x) {
+            if (!x) return "";
+            // display in local time as YYYY-MM-DD HH:mm
+            const d = new Date(x);
+            const pad = (n) => String(n).padStart(2, "0");
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+              d.getDate()
+            )} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+          }
+          function fmtMoney(n) {
+            return Number(n || 0).toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            });
+          }
+
+          // init
+          reload();
+          return {
+            month,
+            q,
+            page,
+            pages,
+            expenses,
+            total,
+            categorySummary,
+            monthTotal,
+            newItem,
+            reload,
+            prevPage,
+            nextPage,
+            beginEdit,
+            cancel,
+            save,
+            del,
+            create,
+            fmtDate,
+            fmtMoney,
+          };
+        },
+      }).mount("#app");
+    </script>
+  </body>
+</html>
