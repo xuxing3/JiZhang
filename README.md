@@ -1,17 +1,17 @@
 # JiZhang
 
-# 1) Install dependencies
+1. Install dependencies
 
 npm i
 
-# 2) Set environment
+2. Set environment
 
-# edit .env with your MONGODB_URI and optional API_KEY
+edit .env with your MONGODB_URI and optional API_KEY
 
-# 3) Start
+3. Start
 
 node server.js
 
-# 4) Open the app
+4. Open the app
 
-# http://localhost:3000
+http://localhost:3000

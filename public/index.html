@@ -1,122 +1,398 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN" data-theme="dark">
   <head>
     <meta charset="utf-8" />
-    <title>My Expenses</title>
+    <title>Expenses Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- Vue 3 via CDN -->
+    <!-- 可选字体
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+      :root {
+        --font-sans: Inter, system-ui, -apple-system, "SF Pro Text", Segoe UI,
+          Roboto, "Noto Sans SC", "PingFang SC", "Microsoft YaHei",
+          "Noto Sans CJK SC", "Heiti SC", Arial, sans-serif;
+
+        /* Dark */
+        --bg: #0c1020;
+        --panel: #12182c;
+        --panel-soft: #0f1430;
+        --muted: #9aa3b2;
+        --text: #e8ecf8;
+        --border: rgba(255, 255, 255, 0.08);
+        --brand: #8b8bff;
+        --brand-2: #a78bfa;
+        --ok: #33d69f;
+        --warn: #f6c452;
+        --danger: #f87171;
+        --chip: #202845;
+        --chip-2: #1a2240;
+        --shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+        --radius: 16px;
+        --input-bg: #0f1533;
+        --badge-bg: #15243f;
+        --edit-row-bg: rgba(255, 255, 255, 0.02);
+
+        --fs-xs: clamp(11.5px, 0.25vw + 10px, 12.5px);
+        --fs-sm: clamp(12.5px, 0.3vw + 10.5px, 13.8px);
+        --fs-base: clamp(14px, 0.35vw + 11px, 15.8px);
+        --fs-md: clamp(15px, 0.45vw + 11.5px, 17.2px);
+        --fs-lg: clamp(16.5px, 0.55vw + 12px, 19px);
+      }
+      :root[data-theme="light"] {
+        --bg: #f5f7fb;
+        --panel: #ffffff;
+        --panel-soft: #fafbff;
+        --muted: #5b6475;
+        --text: #0f172a;
+        --border: rgba(0, 0, 0, 0.08);
+        --brand: #3b82f6;
+        --brand-2: #6366f1;
+        --ok: #059669;
+        --warn: #eab308;
+        --danger: #ef4444;
+        --chip: #eef2ff;
+        --chip-2: #f3f6ff;
+        --shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+        --input-bg: #ffffff;
+        --badge-bg: #eef2ff;
+        --edit-row-bg: rgba(0, 0, 0, 0.03);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
       body {
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        height: 100%;
+      }
+      body {
         margin: 0;
-        background: #f6f7fb;
+        font-family: var(--font-sans);
+        font-size: var(--fs-base);
+        line-height: 1.55;
+        color: var(--text);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+        background: radial-gradient(
+            1200px 600px at 20% -10%,
+            #1e275a 0%,
+            rgba(30, 39, 90, 0) 55%
+          ),
+          radial-gradient(
+            1000px 700px at 110% 10%,
+            #3d1d6d 0%,
+            rgba(61, 29, 109, 0) 60%
+          ),
+          var(--bg);
+      }
+      html[data-theme="light"] body {
+        background: radial-gradient(
+            900px 500px at 15% -10%,
+            #dfe7ff 0%,
+            rgba(223, 231, 255, 0) 60%
+          ),
+          radial-gradient(
+            900px 600px at 110% 10%,
+            #f5d9ff 0%,
+            rgba(245, 217, 255, 0) 60%
+          ),
+          var(--bg);
       }
       .wrap {
         max-width: 1100px;
-        margin: 24px auto;
-        padding: 0 16px;
+        margin: 28px auto;
+        padding: 0 18px;
       }
       .card {
-        background: #fff;
-        border-radius: 14px;
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
-        padding: 16px;
-        margin-bottom: 16px;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-      th,
-      td {
-        padding: 10px 8px;
-        border-bottom: 1px solid #eee;
-        vertical-align: middle;
-      }
-      th {
-        text-align: left;
-        font-weight: 600;
-        color: #222;
-      }
-      input,
-      select {
-        padding: 6px 8px;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        outline: none;
-      }
-      input[type="number"] {
-        width: 110px;
-      }
-      .btn {
-        padding: 6px 10px;
-        border: 1px solid #ddd;
-        border-radius: 10px;
-        background: #fff;
-        cursor: pointer;
-      }
-      .btn:hover {
-        background: #f0f3f7;
-      }
-      .btn.primary {
-        border-color: #3451e8;
-      }
-      .btn.danger {
-        border-color: #e3342f;
-      }
-      .row-actions {
-        display: flex;
-        gap: 6px;
+        background: linear-gradient(
+          180deg,
+          var(--panel) 0%,
+          var(--panel-soft) 100%
+        );
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 18px;
+        margin-bottom: 18px;
       }
       .toolbar {
         display: flex;
+        gap: 12px;
+        align-items: center;
         flex-wrap: wrap;
+      }
+      .toolbar .right {
+        margin-left: auto;
+        display: flex;
         gap: 10px;
         align-items: center;
       }
-      .totals {
-        display: flex;
-        gap: 14px;
-        flex-wrap: wrap;
-      }
-      .pill {
-        background: #eef2ff;
-        color: #223;
-        border-radius: 999px;
-        padding: 6px 10px;
-        font-size: 13px;
+      h3 {
+        font-size: var(--fs-lg);
+        margin: 0 0 10px 0;
+        letter-spacing: 0.2px;
       }
       .muted {
-        color: #666;
-        font-size: 12px;
+        color: var(--muted);
+        font-size: var(--fs-xs);
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: var(--chip);
+        border: 1px solid var(--border);
+        font-size: var(--fs-sm);
+        color: inherit;
+      }
+      .ai-pill {
+        background: linear-gradient(90deg, #2b2f66, #2a1b57);
+        border-color: #3d3e7a;
+      }
+      :root[data-theme="light"] .ai-pill {
+        background: linear-gradient(90deg, #edf2ff, #f5f0ff);
+        border-color: #e4e7ff;
+      }
+      .ai-pill .star {
+        display: inline-grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--brand);
+        color: #0b0f24;
+        font-weight: 700;
+      }
+      input,
+      button {
+        font: inherit;
+        color: var(--text);
+      }
+      input,
+      select {
+        background: var(--input-bg);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 9px 12px;
+        border-radius: 12px;
+        outline: none;
+        font-size: var(--fs-sm);
+      }
+      input::placeholder {
+        color: #7f8aa8;
+        opacity: 0.9;
+      }
+      .btn {
+        padding: 9px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--panel-soft);
+        cursor: pointer;
+        font-size: var(--fs-sm);
+      }
+      .btn:hover {
+        filter: brightness(1.05);
+      }
+      .btn.primary {
+        border-color: var(--brand);
+        box-shadow: inset 0 0 0 1px
+          color-mix(in oklab, var(--brand) 25%, transparent);
+      }
+      .btn.danger {
+        border-color: var(--danger);
+        box-shadow: inset 0 0 0 1px
+          color-mix(in oklab, var(--danger) 25%, transparent);
+      }
+      .summary {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .summary .kv {
+        background: var(--chip-2);
+        border: 1px solid var(--border);
+        padding: 8px 12px;
+        border-radius: 10px;
+        font-size: var(--fs-sm);
+      }
+      .summary .kv b {
+        color: inherit;
+      }
+      .hr {
+        height: 1px;
+        background: var(--border);
+        margin: 10px 0 4px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        table-layout: fixed;
+      }
+      thead th {
+        font-weight: 600;
+        text-align: left;
+        padding: 12px 10px;
+        border-bottom: 1px solid var(--border);
+        color: var(--text);
+        position: sticky;
+        top: 0;
+        background: linear-gradient(180deg, #141a36 0%, #12182c 80%);
+        z-index: 1;
+        font-size: var(--fs-sm);
+      }
+      html[data-theme="light"] thead th {
+        background: linear-gradient(180deg, #f8fbff 0%, #ffffff 80%);
+      }
+      tbody td {
+        padding: 12px 10px;
+        border-bottom: 1px solid var(--border);
+        color: inherit;
+        vertical-align: top;
+        font-size: var(--fs-sm);
+      }
+      tbody tr.editing td {
+        padding: 10px 10px;
+        background: var(--edit-row-bg);
+      }
+      .right {
+        text-align: right;
       }
       .nowrap {
         white-space: nowrap;
       }
-      .right {
+      .ellipsis {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: block;
+      }
+      .amount {
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum", "cv02", "cv03", "ss01";
+        letter-spacing: 0.2px;
+      }
+      .amount.badge {
+        display: inline-flex;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: var(--badge-bg);
+        border: 1px solid var(--border);
+      }
+      .category-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: var(--chip);
+        border: 1px solid var(--border);
+        font-size: 12px;
+      }
+      .row-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .empty {
+        color: var(--muted);
+        text-align: center;
+        padding: 28px 0;
+      }
+      .sort-btn {
+        cursor: pointer;
+        user-select: none;
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .sort-icon {
+        opacity: 0.5;
+      }
+      .sort-active .sort-icon {
+        opacity: 1;
+      }
+      .note {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .note.expanded {
+        -webkit-line-clamp: unset;
+      }
+      .link {
+        color: var(--brand-2);
+        cursor: pointer;
+        font-size: var(--fs-xs);
+      }
+      .table-input {
+        width: 100%;
+        min-width: 0;
+        height: 36px;
+        padding: 6px 10px;
+        border-radius: 10px;
+        background: var(--input-bg);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-size: var(--fs-sm);
+        outline: none;
+      }
+      .table-input:focus {
+        box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand) 30%, transparent);
+      }
+      .table-input.amount-input {
         text-align: right;
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum", "cv02", "cv03", "ss01";
+      }
+
+      /* Chart card */
+      .chart-wrap {
+        height: 340px;
+        position: relative;
+      }
+      .chart-toolbar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
       }
     </style>
   </head>
   <body>
     <div id="app" class="wrap">
+      <!-- Top Controls -->
       <div class="card">
         <div class="toolbar">
-          <div>
-            <label>Month:&nbsp;</label>
-            <input type="month" v-model="month" @change="reload" />
+          <div class="pill ai-pill">
+            <span class="star">★</span>
+            <div>
+              <div class="muted" style="line-height: 1.2">Monthly Summary</div>
+              <div style="font-size: var(--fs-sm)">{{ summaryText }}</div>
+            </div>
           </div>
-          <div>
+
+          <div class="right">
+            <label class="muted">Month:&nbsp;</label>
+            <input type="month" v-model="month" @change="onMonthChange" />
             <input
               placeholder="Search payee/category/note"
               v-model.trim="q"
-              @keyup.enter="reload"
+              @keyup.enter="resetPageAndReload"
+              style="min-width: 280px"
             />
-            <button class="btn" @click="reload">Search</button>
-          </div>
-          <div class="muted">Showing {{expenses.length}} / {{total}} items</div>
-          <div style="margin-left: auto">
+            <button class="btn" @click="resetPageAndReload">Search</button>
+            <span class="muted"
+              >Showing {{expenses.length}} / {{total}} items</span
+            >
             <button class="btn" @click="prevPage" :disabled="page<=1">
               Prev
             </button>
@@ -124,13 +400,48 @@
             <button class="btn" @click="nextPage" :disabled="page>=pages">
               Next
             </button>
+            <button class="btn" @click="toggleTheme" :title="themeBtnTitle">
+              {{ themeIcon }} {{ themeBtnText }}
+            </button>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+        <div class="summary" v-if="categorySummary.length">
+          <div class="kv"><b>Total:</b> {{ fmtMoney(monthTotal) }}</div>
+          <div class="kv"><b>Entries:</b> {{ total }}</div>
+          <div class="kv">
+            <b>Top category:</b> {{ topCategoryName }} ({{
+            fmtMoney(topCategoryTotal) }})
+          </div>
+          <div class="kv"><b>Range:</b> {{ rangeText }}</div>
+          <div class="kv muted">
+            Tip: click column headers to sort; use the search to filter.
           </div>
         </div>
       </div>
 
+      <!-- Charts -->
       <div class="card">
-        <h3 style="margin: 0 0 12px">Add Expense</h3>
-        <div class="toolbar">
+        <h3>Charts</h3>
+        <div class="chart-toolbar">
+          <select v-model="chartType" @change="buildChart">
+            <option value="category">By Category (Donut)</option>
+            <option value="daily">Daily Total (Bar)</option>
+            <option value="cumulative">Monthly Cumulative (Line)</option>
+          </select>
+          <button class="btn" @click="buildChart">Refresh Chart</button>
+          <span class="muted">Data range: {{ rangeText }}</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="expChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Add -->
+      <div class="card">
+        <h3>Add Expense</h3>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap">
           <input type="datetime-local" v-model="newItem.time" />
           <input
             type="number"
@@ -149,66 +460,142 @@
         </div>
       </div>
 
-      <div class="card">
-        <div class="totals" v-if="categorySummary.length">
-          <div v-for="c in categorySummary" :key="c.category" class="pill">
-            {{c.category}}: {{fmtMoney(c.total)}} ({{c.count}})
-          </div>
-          <div class="pill" style="background: #e6ffed">
-            Month Total: {{fmtMoney(monthTotal)}}
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
+      <!-- Table -->
+      <div class="card" style="padding: 0">
         <table>
+          <colgroup>
+            <col style="width: 170px" />
+            <col style="width: 110px" />
+            <col style="width: 140px" />
+            <col />
+            <col />
+            <col style="width: 150px" />
+          </colgroup>
           <thead>
             <tr>
-              <th class="nowrap">Time</th>
-              <th class="right">Amount</th>
-              <th>Category</th>
-              <th>Payee</th>
+              <th class="nowrap">
+                <span
+                  class="sort-btn"
+                  :class="{'sort-active': sortKey==='time'}"
+                  @click="toggleSort('time')"
+                >
+                  Date
+                  <span class="sort-icon"
+                    >{{ sortKey==='time' ? (sortDir==='asc' ? '▲' : '▼') : '↕'
+                    }}</span
+                  ></span
+                >
+              </th>
+              <th class="right nowrap">
+                <span
+                  class="sort-btn"
+                  :class="{'sort-active': sortKey==='amount'}"
+                  @click="toggleSort('amount')"
+                >
+                  Amount
+                  <span class="sort-icon"
+                    >{{ sortKey==='amount' ? (sortDir==='asc' ? '▲' : '▼') : '↕'
+                    }}</span
+                  ></span
+                >
+              </th>
+              <th class="nowrap">
+                <span
+                  class="sort-btn"
+                  :class="{'sort-active': sortKey==='category'}"
+                  @click="toggleSort('category')"
+                >
+                  Category
+                  <span class="sort-icon"
+                    >{{ sortKey==='category' ? (sortDir==='asc' ? '▲' : '▼') :
+                    '↕' }}</span
+                  ></span
+                >
+              </th>
+              <th class="nowrap">
+                <span
+                  class="sort-btn"
+                  :class="{'sort-active': sortKey==='payee'}"
+                  @click="toggleSort('payee')"
+                >
+                  Payee
+                  <span class="sort-icon"
+                    >{{ sortKey==='payee' ? (sortDir==='asc' ? '▲' : '▼') : '↕'
+                    }}</span
+                  ></span
+                >
+              </th>
               <th>Note</th>
               <th class="nowrap">Actions</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in expenses" :key="row._id">
+            <tr
+              v-for="row in sortedExpenses"
+              :key="row._id"
+              :class="{ editing: row._editing }"
+            >
               <td class="nowrap">
-                <template v-if="row._editing">
-                  <input type="datetime-local" v-model="row._edit.time" />
-                </template>
-                <template v-else>{{ fmtDate(row.time) }}</template>
+                <template v-if="row._editing"
+                  ><input
+                    type="datetime-local"
+                    class="table-input"
+                    v-model="row._edit.time"
+                /></template>
+                <template v-else
+                  ><span class="ellipsis"
+                    >{{ fmtDate(row.time) }}</span
+                  ></template
+                >
               </td>
-              <td class="right">
-                <template v-if="row._editing">
-                  <input
+              <td class="right amount">
+                <template v-if="row._editing"
+                  ><input
                     type="number"
                     step="0.01"
+                    class="table-input amount-input"
                     v-model.number="row._edit.amount"
-                  />
-                </template>
-                <template v-else>{{ fmtMoney(row.amount) }}</template>
-              </td>
-              <td>
-                <template v-if="row._editing">
-                  <input v-model="row._edit.category" />
-                </template>
+                /></template>
                 <template v-else
-                  >{{ row.category || 'Uncategorized' }}</template
+                  ><span class="amount badge"
+                    >{{ fmtMoney(row.amount) }}</span
+                  ></template
                 >
               </td>
               <td>
-                <template v-if="row._editing">
-                  <input v-model="row._edit.payee" />
-                </template>
-                <template v-else>{{ row.payee }}</template>
+                <template v-if="row._editing"
+                  ><input class="table-input" v-model="row._edit.category"
+                /></template>
+                <template v-else
+                  ><span class="category-chip"
+                    ># {{ row.category || 'Uncategorized' }}</span
+                  ></template
+                >
               </td>
               <td>
-                <template v-if="row._editing">
-                  <input v-model="row._edit.note" style="min-width: 240px" />
+                <template v-if="row._editing"
+                  ><input class="table-input" v-model="row._edit.payee"
+                /></template>
+                <template v-else
+                  ><span class="ellipsis">{{ row.payee }}</span></template
+                >
+              </td>
+              <td>
+                <template v-if="row._editing"
+                  ><input class="table-input" v-model="row._edit.note"
+                /></template>
+                <template v-else>
+                  <div :class="['note', {expanded: row._expand}]">
+                    {{ row.note }}
+                  </div>
+                  <div
+                    v-if="row.note && row.note.length>40"
+                    class="link"
+                    @click="row._expand=!row._expand"
+                  >
+                    {{ row._expand ? 'Show less' : 'Show more' }}
+                  </div>
                 </template>
-                <template v-else>{{ row.note }}</template>
               </td>
               <td>
                 <div class="row-actions" v-if="!row._editing">
@@ -221,8 +608,8 @@
                 </div>
               </td>
             </tr>
-            <tr v-if="!expenses.length">
-              <td colspan="6" class="muted">No data</td>
+            <tr v-if="!sortedExpenses.length">
+              <td colspan="6" class="empty">No data</td>
             </tr>
           </tbody>
         </table>
@@ -230,19 +617,47 @@
     </div>
 
     <script>
-      const { createApp, ref, computed } = Vue;
+      const { createApp, ref, computed, onMounted, onBeforeUnmount } = Vue;
 
       createApp({
         setup() {
-          const API_BASE = ""; // same-origin (served by Express). If different host, set like "http://localhost:3000"
-          const API_KEY = ""; // optional: if you set API_KEY in server .env, put it here too
-
+          const API_BASE = ""; // same-origin
+          const API_KEY = ""; // set if server uses API_KEY
           const headers = () => {
             const h = { "Content-Type": "application/json" };
             if (API_KEY) h["x-api-key"] = API_KEY;
             return h;
           };
 
+          // ---------- Theme ----------
+          const initialTheme = (() => {
+            const saved = localStorage.getItem("theme");
+            if (saved === "light" || saved === "dark") return saved;
+            return window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: light)").matches
+              ? "light"
+              : "dark";
+          })();
+          const theme = ref(initialTheme);
+          applyTheme(theme.value);
+          function applyTheme(t) {
+            document.documentElement.setAttribute("data-theme", t);
+            localStorage.setItem("theme", t);
+          }
+          function toggleTheme() {
+            theme.value = theme.value === "light" ? "dark" : "light";
+            applyTheme(theme.value);
+            buildChart();
+          }
+          const themeIcon = computed(() =>
+            theme.value === "light" ? "🌙" : "🌞"
+          );
+          const themeBtnText = computed(() =>
+            theme.value === "light" ? "夜间模式" : "日间模式"
+          );
+          const themeBtnTitle = computed(() => "切换页面主题");
+
+          // ---------- State ----------
           const month = ref(new Date().toISOString().slice(0, 7)); // YYYY-MM
           const q = ref("");
           const page = ref(1);
@@ -252,7 +667,7 @@
           const pages = ref(1);
 
           const newItem = ref({
-            time: new Date().toISOString().slice(0, 16), // yyyy-mm-ddThh:mm
+            time: new Date().toISOString().slice(0, 16),
             amount: null,
             category: "",
             payee: "",
@@ -263,17 +678,45 @@
           const monthTotal = computed(() =>
             categorySummary.value.reduce((s, c) => s + (c.total || 0), 0)
           );
+          const topCategory = computed(
+            () => categorySummary.value[0] || { category: "-", total: 0 }
+          );
+          const topCategoryName = computed(
+            () => topCategory.value.category || "-"
+          );
+          const topCategoryTotal = computed(() => topCategory.value.total || 0);
+
+          const chartType = ref("category");
+          const monthDataAll = ref([]); // all items in month for accurate charts
+          let chart; // Chart.js instance
 
           function rangeFromMonth(ym) {
-            // ym = "YYYY-MM"
             const [y, m] = ym.split("-").map((n) => parseInt(n, 10));
             const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
-            const end = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999)); // end of month
-            return { start: start.toISOString(), end: end.toISOString() };
+            const end = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
+            return { start: start.toISOString(), end: end.toISOString(), y, m };
           }
+          const rangeText = computed(() => {
+            const { start, end } = rangeFromMonth(month.value);
+            const s = new Date(start),
+              e = new Date(end);
+            return `${s.getUTCFullYear()}-${pad(
+              s.getUTCMonth() + 1
+            )}-01 ~ ${e.getUTCFullYear()}-${pad(e.getUTCMonth() + 1)}-${pad(
+              e.getUTCDate()
+            )}`;
+          });
+          const summaryText = computed(
+            () =>
+              `Total ${total.value} entries · Sum ${fmtMoney(
+                monthTotal.value
+              )} · Top: ${topCategoryName.value}`
+          );
 
+          // ---------- Data fetch ----------
           async function reload() {
             const { start, end } = rangeFromMonth(month.value);
+            // paginated for table
             const url = new URL(
               API_BASE + "/api/expenses",
               window.location.origin
@@ -283,7 +726,6 @@
             url.searchParams.set("page", page.value);
             url.searchParams.set("limit", limit.value);
             if (q.value) url.searchParams.set("q", q.value);
-
             const res = await fetch(url, { headers: headers() });
             if (!res.ok) {
               alert("Fetch failed");
@@ -296,9 +738,10 @@
               ...row,
               _editing: false,
               _edit: null,
+              _expand: false,
             }));
 
-            // summary
+            // category summary
             const su = new URL(
               API_BASE + "/api/stats/category",
               window.location.origin
@@ -307,6 +750,40 @@
             su.searchParams.set("end", end);
             const res2 = await fetch(su, { headers: headers() });
             categorySummary.value = res2.ok ? await res2.json() : [];
+
+            // fetch full month for chart (page=1, big limit)
+            const all = new URL(
+              API_BASE + "/api/expenses",
+              window.location.origin
+            );
+            all.searchParams.set("start", start);
+            all.searchParams.set("end", end);
+            all.searchParams.set("page", 1);
+            all.searchParams.set("limit", 5000);
+            const res3 = await fetch(all, { headers: headers() });
+            const j3 = res3.ok ? await res3.json() : { data: [] };
+            monthDataAll.value = j3.data || [];
+
+            buildChart();
+          }
+          function resetPageAndReload() {
+            page.value = 1;
+            reload();
+          }
+          function prevPage() {
+            if (page.value > 1) {
+              page.value--;
+              reload();
+            }
+          }
+          function nextPage() {
+            if (page.value < pages.value) {
+              page.value++;
+              reload();
+            }
+          }
+          function onMonthChange() {
+            resetPageAndReload();
           }
 
           async function create() {
@@ -323,17 +800,23 @@
               body: JSON.stringify(body),
             });
             if (!res.ok) return alert("Create failed");
-            // reset some fields
             newItem.value.amount = null;
             newItem.value.payee = "";
             newItem.value.note = "";
-            await reload();
+            resetPageAndReload();
           }
 
+          // ---------- Inline edit ----------
+          function toLocalInputValue(dt) {
+            const d = new Date(dt);
+            const off = d.getTimezoneOffset();
+            const local = new Date(d.getTime() - off * 60000);
+            return local.toISOString().slice(0, 16);
+          }
           function beginEdit(row) {
             row._editing = true;
             row._edit = {
-              time: (row.time || "").slice(0, 16), // to datetime-local
+              time: toLocalInputValue(row.time),
               amount: row.amount,
               category: row.category || "",
               payee: row.payee || "",
@@ -354,7 +837,7 @@
             if (!res.ok) return alert("Update failed");
             row._editing = false;
             row._edit = null;
-            await reload();
+            reload();
           }
           async function del(row) {
             if (!confirm("Delete this expense?")) return;
@@ -363,30 +846,188 @@
               headers: headers(),
             });
             if (!res.ok) return alert("Delete failed");
-            await reload();
+            reload();
           }
 
-          function prevPage() {
-            if (page.value > 1) {
-              page.value--;
-              reload();
+          // ---------- Sorting ----------
+          const sortKey = ref("time");
+          const sortDir = ref("desc");
+          function toggleSort(key) {
+            if (sortKey.value === key) {
+              sortDir.value = sortDir.value === "asc" ? "desc" : "asc";
+            } else {
+              sortKey.value = key;
+              sortDir.value = "desc";
             }
           }
-          function nextPage() {
-            if (page.value < pages.value) {
-              page.value++;
-              reload();
+          const sortedExpenses = computed(() => {
+            const arr = expenses.value.slice();
+            const dir = sortDir.value === "asc" ? 1 : -1;
+            const key = sortKey.value;
+            arr.sort((a, b) => {
+              let va, vb;
+              if (key === "time") {
+                va = new Date(a.time).getTime();
+                vb = new Date(b.time).getTime();
+              } else if (key === "amount") {
+                va = Number(a.amount) || 0;
+                vb = Number(b.amount) || 0;
+              } else {
+                va = (a[key] || "").toString().toLowerCase();
+                vb = (b[key] || "").toString().toLowerCase();
+              }
+              if (va < vb) return -1 * dir;
+              if (va > vb) return 1 * dir;
+              return 0;
+            });
+            return arr;
+          });
+
+          // ---------- Charts ----------
+          function getCss(name) {
+            return getComputedStyle(document.documentElement)
+              .getPropertyValue(name)
+              .trim();
+          }
+          function palette(n) {
+            // generate harmonious HSL colors anchored to --brand
+            const base = theme.value === "light" ? 230 : 250; // hue
+            const arr = [];
+            for (let i = 0; i < n; i++) {
+              const hue = (base + i * 37) % 360;
+              const s = theme.value === "light" ? 70 : 55;
+              const l = theme.value === "light" ? 60 : 55;
+              arr.push(`hsl(${hue} ${s}% ${l}%)`);
+            }
+            return arr;
+          }
+
+          function buildChart() {
+            const ctx = document.getElementById("expChart");
+            if (!ctx) return;
+            if (chart) {
+              chart.destroy();
+              chart = null;
+            }
+
+            const grid = getCss("--border") || "rgba(0,0,0,.1)";
+            const text = getCss("--text") || "#222";
+
+            if (chartType.value === "category") {
+              const labels = categorySummary.value.map(
+                (x) => x.category || "Uncategorized"
+              );
+              const data = categorySummary.value.map((x) => x.total || 0);
+              const colors = palette(labels.length);
+              chart = new Chart(ctx, {
+                type: "doughnut",
+                data: {
+                  labels,
+                  datasets: [{ data, backgroundColor: colors, borderWidth: 0 }],
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: { legend: { labels: { color: text } } },
+                },
+              });
+              return;
+            }
+
+            // daily totals / cumulative
+            const { y, m } = rangeFromMonth(month.value);
+            const days = new Date(y, m, 0).getDate();
+            const daily = Array.from({ length: days }, () => 0);
+
+            for (const it of monthDataAll.value) {
+              if (!it.time) continue;
+              const d = new Date(it.time);
+              daily[d.getDate() - 1] += Number(it.amount) || 0; // local day
+            }
+            const labels = Array.from({ length: days }, (_, i) => `${i + 1}`);
+            if (chartType.value === "daily") {
+              chart = new Chart(ctx, {
+                type: "bar",
+                data: {
+                  labels,
+                  datasets: [
+                    {
+                      label: "Daily Total",
+                      data: daily,
+                      backgroundColor: palette(1)[0],
+                    },
+                  ],
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                    x: { grid: { color: grid }, ticks: { color: text } },
+                    y: { grid: { color: grid }, ticks: { color: text } },
+                  },
+                  plugins: {
+                    legend: { labels: { color: text } },
+                    tooltip: {
+                      callbacks: { label: (c) => ` ${fmtMoney(c.parsed.y)}` },
+                    },
+                  },
+                },
+              });
+            } else {
+              const cum = daily.slice();
+              for (let i = 1; i < cum.length; i++) cum[i] += cum[i - 1];
+              chart = new Chart(ctx, {
+                type: "line",
+                data: {
+                  labels,
+                  datasets: [
+                    {
+                      label: "Cumulative",
+                      data: cum,
+                      fill: false,
+                      borderWidth: 2,
+                      borderColor: palette(1)[0],
+                      pointRadius: 2,
+                    },
+                  ],
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                    x: { grid: { color: grid }, ticks: { color: text } },
+                    y: { grid: { color: grid }, ticks: { color: text } },
+                  },
+                  plugins: {
+                    legend: { labels: { color: text } },
+                    tooltip: {
+                      callbacks: { label: (c) => ` ${fmtMoney(c.parsed.y)}` },
+                    },
+                  },
+                },
+              });
             }
           }
 
+          function handleResize() {
+            buildChart();
+          }
+          onMounted(() => window.addEventListener("resize", handleResize));
+          onBeforeUnmount(() =>
+            window.removeEventListener("resize", handleResize)
+          );
+
+          // ---------- utils ----------
+          function pad(n) {
+            return String(n).padStart(2, "0");
+          }
           function fmtDate(x) {
             if (!x) return "";
-            // display in local time as YYYY-MM-DD HH:mm
             const d = new Date(x);
-            const pad = (n) => String(n).padStart(2, "0");
-            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+            const P = (n) => String(n).padStart(2, "0");
+            return `${d.getFullYear()}-${P(d.getMonth() + 1)}-${P(
               d.getDate()
-            )} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            )} ${P(d.getHours())}:${P(d.getMinutes())}`;
           }
           function fmtMoney(n) {
             return Number(n || 0).toLocaleString(undefined, {
@@ -395,9 +1036,16 @@
             });
           }
 
-          // init
+          // ---------- init ----------
           reload();
+
           return {
+            // Theme
+            themeIcon,
+            themeBtnText,
+            themeBtnTitle,
+            toggleTheme,
+            // Filters / table
             month,
             q,
             page,
@@ -406,17 +1054,30 @@
             total,
             categorySummary,
             monthTotal,
+            topCategoryName,
+            topCategoryTotal,
+            rangeText,
+            summaryText,
             newItem,
             reload,
+            resetPageAndReload,
             prevPage,
             nextPage,
+            onMonthChange,
+            create,
             beginEdit,
             cancel,
             save,
             del,
-            create,
             fmtDate,
             fmtMoney,
+            sortedExpenses,
+            sortKey,
+            sortDir,
+            toggleSort,
+            // Charts
+            chartType,
+            buildChart,
           };
         },
       }).mount("#app");
