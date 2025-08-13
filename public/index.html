@@ -428,10 +428,24 @@
           <select v-model="chartType" @change="buildChart">
             <option value="category">By Category (Donut)</option>
             <option value="daily">Daily Total (Bar)</option>
-            <option value="cumulative">Monthly Cumulative (Line)</option>
+            <option value="cumulative">Cumulative (Line)</option>
           </select>
-          <button class="btn" @click="buildChart">Refresh Chart</button>
-          <span class="muted">Data range: {{ rangeText }}</span>
+
+          <span class="muted">Range:</span>
+          <select v-model="chartRangeMode" @change="onChartRangeModeChange">
+            <option value="monthly">Monthly (default)</option>
+            <option value="custom">Custom</option>
+          </select>
+
+          <template v-if="chartRangeMode==='custom'">
+            <input type="date" v-model="chartStartDate" />
+            <span>~</span>
+            <input type="date" v-model="chartEndDate" />
+            <button class="btn" @click="applyCustomRange">Apply</button>
+          </template>
+
+          <button class="btn" @click="buildChart">Refresh</button>
+          <span class="muted">Data range: {{ chartRangeText }}</span>
         </div>
         <div class="chart-wrap">
           <canvas id="expChart"></canvas>
@@ -696,7 +710,10 @@
           const topCategoryTotal = computed(() => topCategory.value.total || 0);
 
           const chartType = ref("category");
-          const monthDataAll = ref([]); // all items in month for accurate charts
+          const chartRangeMode = ref("monthly"); // 'monthly' | 'custom'
+          const chartStartDate = ref(""); // YYYY-MM-DD
+          const chartEndDate = ref(""); // YYYY-MM-DD
+          const chartDataAll = ref([]); // all items in chosen range for charts
           let chart; // Chart.js instance
 
           function rangeFromMonth(ym) {
@@ -714,6 +731,11 @@
             )}-01 ~ ${e.getUTCFullYear()}-${pad(e.getUTCMonth() + 1)}-${pad(
               e.getUTCDate()
             )}`;
+          });
+          const chartRangeText = computed(() => {
+            if (chartRangeMode.value === "monthly") return rangeText.value;
+            if (!chartStartDate.value || !chartEndDate.value) return "-";
+            return `${chartStartDate.value} ~ ${chartEndDate.value}`;
           });
           const summaryText = computed(
             () =>
@@ -760,19 +782,8 @@
             const res2 = await fetch(su, { headers: headers() });
             categorySummary.value = res2.ok ? await res2.json() : [];
 
-            // fetch full month for chart (page=1, big limit)
-            const all = new URL(
-              API_BASE + "/api/expenses",
-              window.location.origin
-            );
-            all.searchParams.set("start", start);
-            all.searchParams.set("end", end);
-            all.searchParams.set("page", 1);
-            all.searchParams.set("limit", 5000);
-            const res3 = await fetch(all, { headers: headers() });
-            const j3 = res3.ok ? await res3.json() : { data: [] };
-            monthDataAll.value = j3.data || [];
-
+            // Load chart data for selected range and build chart
+            await loadChartData();
             buildChart();
           }
           function resetPageAndReload() {
@@ -951,17 +962,41 @@
               return;
             }
 
-            // daily totals / cumulative
-            const { y, m } = rangeFromMonth(month.value);
-            const days = new Date(y, m, 0).getDate();
-            const daily = Array.from({ length: days }, () => 0);
+            // daily totals / cumulative for selected range
+            // Determine local start/end
+            let rStart, rEnd;
+            if (chartRangeMode.value === "monthly") {
+              const r = rangeFromMonth(month.value);
+              rStart = new Date(r.start);
+              rEnd = new Date(r.end);
+            } else {
+              if (!chartStartDate.value || !chartEndDate.value) return;
+              rStart = new Date(`${chartStartDate.value}T00:00:00`);
+              rEnd = new Date(`${chartEndDate.value}T23:59:59.999`);
+            }
+            const startMid = new Date(
+              rStart.getFullYear(),
+              rStart.getMonth(),
+              rStart.getDate()
+            );
+            const endMid = new Date(
+              rEnd.getFullYear(),
+              rEnd.getMonth(),
+              rEnd.getDate()
+            );
+            const dayMs = 24 * 60 * 60 * 1000;
+            const days = Math.floor((endMid - startMid) / dayMs) + 1;
+            const daily = Array.from({ length: Math.max(days, 0) }, () => 0);
 
-            for (const it of monthDataAll.value) {
+            for (const it of chartDataAll.value) {
               if (!it.time) continue;
               const d = new Date(it.time);
-              daily[d.getDate() - 1] += Number(it.amount) || 0; // local day
+              const dMid = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+              const idx = Math.floor((dMid - startMid) / dayMs);
+              if (idx >= 0 && idx < daily.length)
+                daily[idx] += Number(it.amount) || 0;
             }
-            const labels = Array.from({ length: days }, (_, i) => `${i + 1}`);
+            const labels = Array.from({ length: daily.length }, (_, i) => `${i + 1}`);
             if (chartType.value === "daily") {
               chart = new Chart(ctx, {
                 type: "bar",
@@ -1053,6 +1088,53 @@
             });
           }
 
+          function toIsoStartOfDay(ymd) {
+            const d = new Date(`${ymd}T00:00:00`);
+            return d.toISOString();
+          }
+          function toIsoEndOfDay(ymd) {
+            const d = new Date(`${ymd}T23:59:59.999`);
+            return d.toISOString();
+          }
+          async function loadChartData() {
+            let startIso, endIso;
+            if (chartRangeMode.value === "monthly") {
+              const { start, end } = rangeFromMonth(month.value);
+              startIso = start;
+              endIso = end;
+            } else {
+              if (!chartStartDate.value || !chartEndDate.value) {
+                chartDataAll.value = [];
+                return;
+              }
+              startIso = toIsoStartOfDay(chartStartDate.value);
+              endIso = toIsoEndOfDay(chartEndDate.value);
+            }
+            const all = new URL(
+              API_BASE + "/api/expenses",
+              window.location.origin
+            );
+            all.searchParams.set("start", startIso);
+            all.searchParams.set("end", endIso);
+            all.searchParams.set("page", 1);
+            all.searchParams.set("limit", 5000);
+            const res = await fetch(all, { headers: headers() });
+            const j = res.ok ? await res.json() : { data: [] };
+            chartDataAll.value = j.data || [];
+          }
+          function onChartRangeModeChange() {
+            if (chartRangeMode.value === "monthly") {
+              loadChartData().then(buildChart);
+            }
+          }
+          function applyCustomRange() {
+            if (!chartStartDate.value || !chartEndDate.value) {
+              alert("Please select start and end dates");
+              return;
+            }
+            loadChartData().then(buildChart);
+          }
+
           // ---------- init ----------
           reload();
 
@@ -1094,6 +1176,12 @@
             toggleSort,
             // Charts
             chartType,
+            chartRangeMode,
+            chartStartDate,
+            chartEndDate,
+            chartRangeText,
+            applyCustomRange,
+            onChartRangeModeChange,
             buildChart,
           };
         },
