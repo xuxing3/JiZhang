@@ -666,8 +666,17 @@
           const total = ref(0);
           const pages = ref(1);
 
+          // Build a datetime-local value for "now" in local timezone
+          function nowLocalInput() {
+            const d = new Date();
+            const off = d.getTimezoneOffset();
+            const local = new Date(d.getTime() - off * 60000);
+            return local.toISOString().slice(0, 16);
+          }
+
           const newItem = ref({
-            time: new Date().toISOString().slice(0, 16),
+            // Use local time (UTC+8 expected) for input default
+            time: nowLocalInput(),
             amount: null,
             category: "",
             payee: "",
@@ -789,10 +798,17 @@
           async function create() {
             if (!newItem.value.amount || !newItem.value.time)
               return alert("amount & time required");
+            // Convert the local datetime-local string to an ISO string
+            // and include tz so the server formats time_local as UTC+8.
+            const localDate = new Date(newItem.value.time);
             const body = {
-              ...newItem.value,
               amount: Number(newItem.value.amount),
+              category: newItem.value.category,
+              payee: newItem.value.payee,
+              note: newItem.value.note,
               source: "web",
+              time: localDate.toISOString(),
+              tz: "Asia/Shanghai",
             };
             const res = await fetch(API_BASE + "/api/expenses", {
               method: "POST",
@@ -803,6 +819,7 @@
             newItem.value.amount = null;
             newItem.value.payee = "";
             newItem.value.note = "";
+            // Keep the chosen time; user can change if needed
             resetPageAndReload();
           }
 
