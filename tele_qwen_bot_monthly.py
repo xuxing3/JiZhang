@@ -360,17 +360,10 @@ def call_qwen_text(text: str) -> dict:
         "如果只有时间（如 19:17）仅返回 HH:MM；若无时间则返回空字符串。文本："
         + str(text)
     )
+    # DashScope text-generation 接口要求 input.prompt 为字符串
     payload = {
         "model": "qwen-turbo",
-        "input": {
-            "messages": [
-                {
-                    "role": "user",
-                    # 对于 text-generation，使用字符串 content 兼容性更好
-                    "content": prompt,
-                }
-            ]
-        },
+        "input": {"prompt": prompt},
         "parameters": {"use_raw_prompt": True},
     }
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
@@ -385,15 +378,23 @@ def call_qwen_text(text: str) -> dict:
             detail = str(e)
         raise RuntimeError(f"DashScope text gen error: {r.status_code} {detail}")
     result = r.json()
-    if "output" not in result:
+    if "output" not in result and "output_text" not in result:
         raise RuntimeError(result.get("code", "Unknown"), result.get("message", "No message"))
-    content = result["output"]["choices"][0]["message"]["content"]
-    # content 可能是列表或纯字符串
-    if isinstance(content, list):
+    # 兼容不同返回格式
+    content = None
+    out = result.get("output") or {}
+    if isinstance(out, dict) and "text" in out:
+        content = out.get("text")
+    if content is None:
+        # 兼容 choices/message 结构
         try:
-            content = content[0]["text"]
+            content = out.get("choices", [])[0]["message"]["content"]
         except Exception:
-            content = str(content)
+            content = None
+    if content is None:
+        content = result.get("output_text")
+    if content is None:
+        raise RuntimeError("DashScope response has no text content")
     return extract_json_from_qwen(content)
 
 # 文本入账：解析自由文本中的 金额/时间/商家 并入库（启发式作为兜底）
