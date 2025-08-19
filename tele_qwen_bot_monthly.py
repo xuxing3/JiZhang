@@ -366,7 +366,8 @@ def call_qwen_text(text: str) -> dict:
             "messages": [
                 {
                     "role": "user",
-                    "content": [{"text": prompt}],
+                    # 对于 text-generation，使用字符串 content 兼容性更好
+                    "content": prompt,
                 }
             ]
         },
@@ -374,7 +375,15 @@ def call_qwen_text(text: str) -> dict:
     }
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
     r = requests.post(url, headers=headers, json=payload, timeout=60)
-    r.raise_for_status()
+    try:
+        r.raise_for_status()
+    except requests.HTTPError as e:
+        # 打印一小段响应内容，便于定位 400 错误原因
+        try:
+            detail = r.text[:300]
+        except Exception:
+            detail = str(e)
+        raise RuntimeError(f"DashScope text gen error: {r.status_code} {detail}")
     result = r.json()
     if "output" not in result:
         raise RuntimeError(result.get("code", "Unknown"), result.get("message", "No message"))
