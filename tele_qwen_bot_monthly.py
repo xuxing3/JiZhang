@@ -208,7 +208,7 @@ def insert_expense(col, amount: float, category: str, payee: str, time_local_str
         "ym": time_local_str[:7],       # 月份分区
         "ts_utc": dt_utc,               # UTC 存库
         "tz": "Asia/Shanghai",
-        "created_at_utc": datetime.utcnow()
+        "created_at_utc": datetime.now(ZoneInfo("UTC"))
     }
     res = col.insert_one(doc)
     doc["_id"] = res.inserted_id   # 确保能拿到 _id
@@ -293,7 +293,13 @@ async def call_qwen(image_path: str):
     result = r.json()
     if "output" not in result:
         raise RuntimeError(result.get("code", "Unknown"), result.get("message", "No message"))
-    return result["output"]["choices"][0]["message"]["content"]
+    content = result["output"]["choices"][0]["message"]["content"]
+    try:
+        # 记录通义图片接口的原始返回（截断以避免日志过长）
+        logger.info("Qwen image response: %s", str(content)[:2000])
+    except Exception:
+        pass
+    return content
 
 # ================= Telegram 处理 =================
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -312,6 +318,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         qwen_resp = await call_qwen(local_path)
         data = extract_json_from_qwen(qwen_resp)
+        try:
+            logger.info("Parsed (image) data: %s", json.dumps(data, ensure_ascii=False))
+        except Exception:
+            pass
 
         raw_amount = data.get("amount")
         payee = (data.get("payee") or "").strip()
@@ -321,15 +331,20 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount = clean_amount(raw_amount)
         category = pick_category(payee=payee, desc="", hint=hint_cat)
 
-        # 只取时间，日期强制用 Asia/Shanghai 的“今天”
-        time_str = time_today_shanghai(raw_time)
+        # 只取时间，日期强制用 Asia/Shanghai 的“今天”（与文本模式保持一致）
+        time_str = normalize_time_local_from_str(raw_time)
+        try:
+            logger.info("Resolved time (image): raw=%s -> local=%s", raw_time, time_str)
+        except Exception:
+            pass
 
         # 入库（按 chat 维度）
         chat_id = update.effective_chat.id
         col = get_mongo()
         doc = insert_expense(col, amount, category, payee, time_str, chat_id=chat_id)
 
-        # ===== 返回一行可直接复制到 /edit 的消息 =====
+        # ===== 回复处理方式 + 可直接复制到 /edit 的消息 =====
+        await update.message.reply_text("✅ 使用方式：图片识别（AI）")
         amt_str = f"{amount:g}"  # 去掉多余0
         line = f'{str(doc["_id"])} amount={amt_str} category={category} payee={quote_for_kv(payee)} time={quote_for_kv(time_str)}'
         await update.message.reply_text(line)
@@ -357,7 +372,7 @@ def call_qwen_text(text: str) -> dict:
         "从用户的记账文本中抽取字段，只返回 JSON（不要加入任何解释或 Markdown）："
         '{ "amount": 数字, "category": "字符串", "payee": "字符串", '
         '"time": "字符串或空", "note": "原文或摘要" }。'
-        "如果只有时间（如 19:17）仅返回 HH:MM；若无时间则返回空字符串。文本："
+        "时间字段规则：不论文本里是否包含日期，均仅返回时间的 HH:MM（例如 19:17）；若无时间则返回空字符串。文本："
         + str(text)
     )
     # DashScope text-generation 接口要求 input.prompt 为字符串
@@ -366,6 +381,10 @@ def call_qwen_text(text: str) -> dict:
         "input": {"prompt": prompt},
         "parameters": {"use_raw_prompt": True},
     }
+    try:
+        logger.info("Qwen text prompt: %s", str(prompt)[:2000])
+    except Exception:
+        pass
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
     r = requests.post(url, headers=headers, json=payload, timeout=60)
     try:
@@ -395,26 +414,21 @@ def call_qwen_text(text: str) -> dict:
         content = result.get("output_text")
     if content is None:
         raise RuntimeError("DashScope response has no text content")
+    try:
+        logger.info("Qwen text response: %s", str(content)[:2000])
+    except Exception:
+        pass
     return extract_json_from_qwen(content)
 
 # 文本入账：解析自由文本中的 金额/时间/商家 并入库（启发式作为兜底）
 def normalize_time_local_from_str(raw_time: str) -> str:
-    """根据原始字符串生成标准 'YYYY-MM-DD HH:MM'（Asia/Shanghai）
-    - 若包含完整日期+时间，直接标准化返回；
-    - 若仅含 HH:MM，用当天日期（GMT+8 / Asia/Shanghai）；
-    - 若没有时间，也用调用时刻（当天）
+    """将任意包含时间的字符串标准化为 'YYYY-MM-DD HH:MM'（Asia/Shanghai）
+    规则（与截图识别一致）：
+    - 不论是否包含日期，一律仅取 HH:MM，并把日期置为“今天”（Asia/Shanghai）。
+    - 若未找到 HH:MM，则使用当前时刻（今天的当前 HH:MM）。
     """
     s = (raw_time or "").strip()
-    m_full = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})[ T]?(\d{1,2}:\d{2})", s)
-    if m_full:
-        ymd = m_full.group(1).replace("/", "-")
-        hm = m_full.group(2)
-        return f"{ymd} {hm}"
-    m_ymd = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", s)
     m_hm = re.search(r"(\d{1,2}:\d{2})", s)
-    if m_ymd and m_hm:
-        ymd = m_ymd.group(1).replace("/", "-")
-        return f"{ymd} {m_hm.group(1)}"
     if m_hm:
         return time_today_shanghai(m_hm.group(1))
     return time_today_shanghai("")
@@ -452,12 +466,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         text = update.message.text or ""
+        try:
+            logger.info("User text: %s", text)
+        except Exception:
+            pass
         # 1) 优先用 AI 解析
         data = None
+        method_used = "AI 文本解析"
         try:
             data = call_qwen_text(text)
         except Exception as e:
             logger.warning(f"AI 文本解析失败，回退启发式：{e}")
+            method_used = "启发式解析"
         # 2) 兜底启发式
         if not isinstance(data, dict):
             data = parse_text_message(text)
@@ -473,13 +493,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         category = pick_category(payee=payee, desc=text, hint=hint_cat)
         raw_time = (data.get("time") or data.get("time_local") or "").strip()
         time_str = normalize_time_local_from_str(raw_time)
+        try:
+            logger.info("Resolved time (text): raw=%s -> local=%s", raw_time, time_str)
+        except Exception:
+            pass
 
         # 入库
         chat_id = update.effective_chat.id
         col = get_mongo()
         doc = insert_expense(col, amt, category, payee, time_str, chat_id=chat_id)
 
-        # 回显可编辑片段
+        # 回显处理方式 + 可编辑片段
+        await update.message.reply_text(f"✅ 使用方式：{method_used}")
         amt_str = f"{amt:g}"
         line = f'{str(doc["_id"])} amount={amt_str} category={category} payee={quote_for_kv(payee)} time={quote_for_kv(time_str)}'
         await update.message.reply_text(line)
