@@ -398,28 +398,34 @@ def call_qwen_text(text: str) -> dict:
     return extract_json_from_qwen(content)
 
 # 文本入账：解析自由文本中的 金额/时间/商家 并入库（启发式作为兜底）
+def normalize_time_local_from_str(raw_time: str) -> str:
+    """根据原始字符串生成标准 'YYYY-MM-DD HH:MM'（Asia/Shanghai）
+    - 若包含完整日期+时间，直接标准化返回；
+    - 若仅含 HH:MM，用当天日期（GMT+8 / Asia/Shanghai）；
+    - 若没有时间，也用调用时刻（当天）
+    """
+    s = (raw_time or "").strip()
+    m_full = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})[ T]?(\d{1,2}:\d{2})", s)
+    if m_full:
+        ymd = m_full.group(1).replace("/", "-")
+        hm = m_full.group(2)
+        return f"{ymd} {hm}"
+    m_ymd = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", s)
+    m_hm = re.search(r"(\d{1,2}:\d{2})", s)
+    if m_ymd and m_hm:
+        ymd = m_ymd.group(1).replace("/", "-")
+        return f"{ymd} {m_hm.group(1)}"
+    if m_hm:
+        return time_today_shanghai(m_hm.group(1))
+    return time_today_shanghai("")
+
 def parse_text_message(raw: str):
     s = (raw or "").strip()
     # 金额（支持 23.5、23,50、23 元、￥23 等）
     m_amt = re.search(r"(-?\d+(?:[.,]\d+)?)(?:\s*(?:元|块|rmb|cny|￥))?", s, re.I)
     amount = float(m_amt.group(1).replace(",", "")) if m_amt else None
 
-    # 时间：优先 YYYY-MM-DD HH:MM，其次 YYYY-MM-DD + HH:MM，再次 HH:MM
-    m_full = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})[ T]?(\d{1,2}:\d{2})", s)
-    m_ymd = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", s)
-    m_hm = re.search(r"(\d{1,2}:\d{2})", s)
-    time_local = None
-    if m_full:
-        ymd = m_full.group(1).replace("/", "-")
-        hm = m_full.group(2)
-        time_local = f"{ymd} {hm}"
-    elif m_ymd and m_hm:
-        ymd = m_ymd.group(1).replace("/", "-")
-        time_local = f"{ymd} {m_hm.group(1)}"
-    elif m_hm:
-        time_local = time_today_shanghai(m_hm.group(1))
-    else:
-        time_local = time_today_shanghai("")
+    time_local = normalize_time_local_from_str(s)
 
     # 商家：尝试 在/于/去/给/向 之后的词块；否则取首个中文/字母串
     payee = ""
@@ -466,7 +472,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hint_cat = (data.get("category") or "").strip()
         category = pick_category(payee=payee, desc=text, hint=hint_cat)
         raw_time = (data.get("time") or data.get("time_local") or "").strip()
-        time_str = time_today_shanghai(raw_time)
+        time_str = normalize_time_local_from_str(raw_time)
 
         # 入库
         chat_id = update.effective_chat.id
