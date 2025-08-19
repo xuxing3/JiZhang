@@ -346,7 +346,48 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-# 文本入账：解析自由文本中的 金额/时间/商家 并入库
+# ===== 文本入账（AI 优先）=====
+# 通过通义千问文本模型从自由文本中抽取结构化字段，仅返回 JSON
+def call_qwen_text(text: str) -> dict:
+    headers = {
+        "Authorization": f"Bearer {DASHSCOPE_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    prompt = (
+        "从用户的记账文本中抽取字段，只返回 JSON（不要加入任何解释或 Markdown）："
+        '{ "amount": 数字, "category": "字符串", "payee": "字符串", '
+        '"time": "字符串或空", "note": "原文或摘要" }。'
+        "如果只有时间（如 19:17）仅返回 HH:MM；若无时间则返回空字符串。文本："
+        + str(text)
+    )
+    payload = {
+        "model": "qwen-turbo",
+        "input": {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"text": prompt}],
+                }
+            ]
+        },
+        "parameters": {"use_raw_prompt": True},
+    }
+    url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
+    r = requests.post(url, headers=headers, json=payload, timeout=60)
+    r.raise_for_status()
+    result = r.json()
+    if "output" not in result:
+        raise RuntimeError(result.get("code", "Unknown"), result.get("message", "No message"))
+    content = result["output"]["choices"][0]["message"]["content"]
+    # content 可能是列表或纯字符串
+    if isinstance(content, list):
+        try:
+            content = content[0]["text"]
+        except Exception:
+            content = str(content)
+    return extract_json_from_qwen(content)
+
+# 文本入账：解析自由文本中的 金额/时间/商家 并入库（启发式作为兜底）
 def parse_text_message(raw: str):
     s = (raw or "").strip()
     # 金额（支持 23.5、23,50、23 元、￥23 等）
@@ -395,15 +436,27 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         text = update.message.text or ""
-        data = parse_text_message(text)
+        # 1) 优先用 AI 解析
+        data = None
+        try:
+            data = call_qwen_text(text)
+        except Exception as e:
+            logger.warning(f"AI 文本解析失败，回退启发式：{e}")
+        # 2) 兜底启发式
+        if not isinstance(data, dict):
+            data = parse_text_message(text)
+
+        # 归一化与修正
         amt = clean_amount(data.get("amount"))
         if not amt:
             await update.message.reply_text("❌ 未识别到金额，请包含如 23 或 23.5 元/￥ 等数字。")
             return
 
         payee = (data.get("payee") or "").strip()
-        category = (data.get("category") or "其他").strip()
-        time_str = data.get("time_local") or time_today_shanghai("")
+        hint_cat = (data.get("category") or "").strip()
+        category = pick_category(payee=payee, desc=text, hint=hint_cat)
+        raw_time = (data.get("time") or data.get("time_local") or "").strip()
+        time_str = time_today_shanghai(raw_time)
 
         # 入库
         chat_id = update.effective_chat.id
