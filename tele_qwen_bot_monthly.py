@@ -346,6 +346,78 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+# 文本入账：解析自由文本中的 金额/时间/商家 并入库
+def parse_text_message(raw: str):
+    s = (raw or "").strip()
+    # 金额（支持 23.5、23,50、23 元、￥23 等）
+    m_amt = re.search(r"(-?\d+(?:[.,]\d+)?)(?:\s*(?:元|块|rmb|cny|￥))?", s, re.I)
+    amount = float(m_amt.group(1).replace(",", "")) if m_amt else None
+
+    # 时间：优先 YYYY-MM-DD HH:MM，其次 YYYY-MM-DD + HH:MM，再次 HH:MM
+    m_full = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})[ T]?(\d{1,2}:\d{2})", s)
+    m_ymd = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", s)
+    m_hm = re.search(r"(\d{1,2}:\d{2})", s)
+    time_local = None
+    if m_full:
+        ymd = m_full.group(1).replace("/", "-")
+        hm = m_full.group(2)
+        time_local = f"{ymd} {hm}"
+    elif m_ymd and m_hm:
+        ymd = m_ymd.group(1).replace("/", "-")
+        time_local = f"{ymd} {m_hm.group(1)}"
+    elif m_hm:
+        time_local = time_today_shanghai(m_hm.group(1))
+    else:
+        time_local = time_today_shanghai("")
+
+    # 商家：尝试 在/于/去/给/向 之后的词块；否则取首个中文/字母串
+    payee = ""
+    m_payee = re.search(r"[在于去给向]([\u4e00-\u9fa5A-Za-z0-9_\-·]{2,20})", s)
+    if m_payee:
+        payee = m_payee.group(1)
+    if not payee:
+        m_cn = re.search(r"([\u4e00-\u9fa5A-Za-z]{2,20})", s)
+        payee = m_cn.group(1) if m_cn else ""
+
+    # 分类：关键词匹配（与截图解析一致）
+    category = pick_category(payee=payee, desc=s, hint="")
+    note = s
+    return {
+        "amount": amount,
+        "time_local": time_local,
+        "category": category,
+        "payee": payee,
+        "note": note,
+    }
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ensure_allowed(update):
+        return
+    try:
+        text = update.message.text or ""
+        data = parse_text_message(text)
+        amt = clean_amount(data.get("amount"))
+        if not amt:
+            await update.message.reply_text("❌ 未识别到金额，请包含如 23 或 23.5 元/￥ 等数字。")
+            return
+
+        payee = (data.get("payee") or "").strip()
+        category = (data.get("category") or "其他").strip()
+        time_str = data.get("time_local") or time_today_shanghai("")
+
+        # 入库
+        chat_id = update.effective_chat.id
+        col = get_mongo()
+        doc = insert_expense(col, amt, category, payee, time_str, chat_id=chat_id)
+
+        # 回显可编辑片段
+        amt_str = f"{amt:g}"
+        line = f'{str(doc["_id"])} amount={amt_str} category={category} payee={quote_for_kv(payee)} time={quote_for_kv(time_str)}'
+        await update.message.reply_text(line)
+    except Exception as e:
+        logger.exception("文本入账失败")
+        await update.message.reply_text(f"❌ 文本入账失败：{e}")
+
 # /report [YYYY-MM]
 async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ensure_allowed(update):
@@ -601,6 +673,7 @@ def main():
         raise RuntimeError("MONGO_URI 未配置")
 
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CommandHandler("report", cmd_report))
     app.add_handler(CommandHandler("list", cmd_list))
