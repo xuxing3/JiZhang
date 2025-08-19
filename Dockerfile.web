@@ -1,0 +1,19 @@
+# Build a minimal image to run the Node.js API + static frontend
+FROM node:20-alpine AS base
+
+WORKDIR /app
+
+# Install production deps
+COPY package*.json ./
+RUN npm ci --only=production || npm install --production
+
+# Copy app files
+COPY server.js ./server.js
+COPY public ./public
+
+ENV NODE_ENV=production
+EXPOSE 3000
+
+# The server uses dotenv; environment variables can be injected at runtime
+CMD ["node", "server.js"]
+

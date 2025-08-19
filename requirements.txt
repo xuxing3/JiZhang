@@ -1,0 +1,13 @@
+# Python dependencies for the Telegram bot (tele_qwen_bot_monthly.py)
+
+python-telegram-bot>=21.0
+python-dotenv>=1.0
+requests>=2.31
+pandas>=2.0
+matplotlib>=3.7
+openpyxl>=3.1
+pymongo>=4.5
+pillow>=10.0
+# For ZoneInfo database on some platforms (e.g., Windows)
+tzdata>=2024.1
+

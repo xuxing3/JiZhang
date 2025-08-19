@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    env_file:
+      - .env
+    depends_on: []
+    restart: unless-stopped
+
+# Notes:
+# - This compose file expects a `.env` with valid key=value lines (no spaces around `=`).
+# - Required envs:
+#   * For web: MONGODB_URI (and optional API_KEY, PORT, DB_NAME, COLLECTION)
+#   * For bot: MONGODB_URI, TELEGRAM_TOKEN, DASHSCOPE_API_KEY, ALLOWED_USER_IDS or FORCE_CHAT_ID
+

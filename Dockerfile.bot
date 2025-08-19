@@ -1,0 +1,21 @@
+# Python Telegram bot using Qwen (DashScope)
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install optional fonts for Chinese rendering in matplotlib
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends fonts-noto-cjk && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY tele_qwen_bot_monthly.py ./tele_qwen_bot_monthly.py
+
+# The bot reads config from environment variables (.env via docker-compose env_file)
+CMD ["python", "tele_qwen_bot_monthly.py"]
+
