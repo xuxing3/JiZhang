@@ -46,6 +46,9 @@
   - `COLLECTION`：集合名，默认 `expenses`
   - `API_KEY`：若设置，所有 API 请求需带 `x-api-key: <值>` 头
   - `FORCE_CHAT_ID`：将 API 数据限制到某个 chat/user id
+  - `AI_PROVIDER`：文本解析提供方，可选 `openai` / `dashscope`（留空则自动根据可用的 Key 选择或使用规则解析）
+  - `OPENAI_API_KEY`、`OPENAI_MODEL`（默认 `gpt-4o-mini`）
+  - `DASHSCOPE_API_KEY`、`QWEN_MODEL`（默认 `qwen-turbo`）
 - 可选（机器人）
   - `TELEGRAM_TOKEN`：Telegram 机器人 Token
   - `DASHSCOPE_API_KEY`：通义千问 DashScope Key
@@ -55,6 +58,18 @@
 - 健康检查：`curl http://localhost:3000/api/health`
 - 指定端口启动：`PORT=4000 npm start`
 - 启用 API Key 时的请求：`curl -H "x-api-key: <key>" http://localhost:3000/api/health`
+
+文本入账（AI 解析）
+- 接口：`POST /api/expenses/parse`
+- 说明：传入一段自然语言记账文本（中文/英文均可），服务端会优先调用配置的 AI（OpenAI/Qwen），失败或未配置时会回退到规则解析；解析成功后自动入库，并返回创建的记录和解析结果。
+- 请求体（JSON）：
+  - `text`：必填，自然语言文本，如：`"午饭 麦当劳 23.5元 12:10"`
+  - `tz`：可选，默认 `Asia/Shanghai`
+  - `chat_id`：可选；若设置了 `FORCE_CHAT_ID` 则忽略此值
+- 示例：
+  - `curl -X POST http://localhost:3000/api/expenses/parse -H 'Content-Type: application/json' -d '{"text":"买菜 45.5 超市 18:30"}'`
+  - 启用 API Key：`curl -X POST http://localhost:3000/api/expenses/parse -H 'x-api-key: <key>' -H 'Content-Type: application/json' -d '{"text":"午饭 星巴克 28 12:05"}'`
+ - 返回：`{ created: <入库文档>, parsed: { amount, category, payee, time, note } }`
 
 提示
 - Web 与 Bot 是两个进程，可分别或同时运行；它们共享同一个 `MONGODB_URI`
