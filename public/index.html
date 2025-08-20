@@ -427,7 +427,7 @@
         <div class="chart-toolbar">
           <select v-model="chartType" @change="buildChart">
             <option value="category">By Category (Donut)</option>
-            <option value="daily">Daily Total (Bar)</option>
+            <option value="daily">Daily Total (Stacked)</option>
             <option value="cumulative">Cumulative (Line)</option>
           </select>
 
@@ -463,7 +463,11 @@
             placeholder="Amount"
             v-model.number="newItem.amount"
           />
-          <input placeholder="Category" v-model.trim="newItem.category" />
+          <select v-model="newItem.category">
+            <option v-for="c in categoryOptions" :key="c" :value="c">
+              {{ c || 'Uncategorized' }}
+            </option>
+          </select>
           <input placeholder="Payee" v-model.trim="newItem.payee" />
           <input
             placeholder="Note"
@@ -577,9 +581,13 @@
                 >
               </td>
               <td>
-                <template v-if="row._editing"
-                  ><input class="table-input" v-model="row._edit.category"
-                /></template>
+                <template v-if="row._editing">
+                  <select class="table-input" v-model="row._edit.category">
+                    <option v-for="c in categoryOptions" :key="c" :value="c">
+                      {{ c || 'Uncategorized' }}
+                    </option>
+                  </select>
+                </template>
                 <template v-else
                   ><span class="category-chip"
                     ># {{ row.category || 'Uncategorized' }}</span
@@ -692,12 +700,42 @@
             // Use local time (UTC+8 expected) for input default
             time: nowLocalInput(),
             amount: null,
-            category: "",
+            category: "Uncategorized",
             payee: "",
             note: "",
           });
 
           const categorySummary = ref([]);
+          // Category options for dropdown (merge defaults + observed)
+          const defaultCategories = [
+            "转账",
+            "生活缴费",
+            "出行",
+            "餐饮",
+            "购物",
+            "数码",
+            "娱乐",
+            "通讯",
+            "医疗",
+            "其他",
+            "Uncategorized",
+          ];
+          const categoryOptions = computed(() => {
+            const set = new Set(defaultCategories);
+            // from current table data
+            for (const r of expenses.value) if (r.category) set.add(r.category);
+            // from summary (top categories this month)
+            for (const s of categorySummary.value)
+              if (s && s.category) set.add(s.category);
+            // ensure "Uncategorized" exists
+            set.add("Uncategorized");
+            // keep default order first, then others alphabetically
+            const rest = [...set].filter((c) => !defaultCategories.includes(c));
+            rest.sort((a, b) => a.localeCompare(b));
+            return [...defaultCategories, ...rest].filter(
+              (v, i, arr) => arr.indexOf(v) === i
+            );
+          });
           const monthTotal = computed(() =>
             categorySummary.value.reduce((s, c) => s + (c.total || 0), 0)
           );
@@ -846,7 +884,7 @@
             row._edit = {
               time: toLocalInputValue(row.time),
               amount: row.amount,
-              category: row.category || "",
+              category: row.category || "Uncategorized",
               payee: row.payee || "",
               note: row.note || "",
             };
@@ -998,29 +1036,70 @@
             }
             const labels = Array.from({ length: daily.length }, (_, i) => `${i + 1}`);
             if (chartType.value === "daily") {
+              // Build stacked series by category per day
+              const catSet = new Set();
+              const catTotals = new Map();
+              const catData = new Map(); // cat -> Array(days).fill(0)
+              for (const it of chartDataAll.value) {
+                if (!it.time) continue;
+                const d = new Date(it.time);
+                const dMid = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                const idx = Math.floor((dMid - startMid) / dayMs);
+                if (idx < 0 || idx >= daily.length) continue;
+                const cat = (it.category || "Uncategorized").toString();
+                if (!catData.has(cat)) {
+                  catData.set(cat, Array.from({ length: daily.length }, () => 0));
+                  catTotals.set(cat, 0);
+                }
+                const arr = catData.get(cat);
+                const amt = Number(it.amount) || 0;
+                arr[idx] += amt;
+                catTotals.set(cat, (catTotals.get(cat) || 0) + amt);
+                catSet.add(cat);
+              }
+              const cats = Array.from(catSet);
+              // Sort categories by total desc for consistent stacking
+              cats.sort((a, b) => (catTotals.get(b) || 0) - (catTotals.get(a) || 0));
+              const colors = palette(cats.length);
+              const datasets = cats.map((cat, i) => ({
+                label: cat || "Uncategorized",
+                data: catData.get(cat) || Array.from({ length: daily.length }, () => 0),
+                backgroundColor: colors[i],
+                stack: "total",
+                borderWidth: 0,
+              }));
               chart = new Chart(ctx, {
                 type: "bar",
-                data: {
-                  labels,
-                  datasets: [
-                    {
-                      label: "Daily Total",
-                      data: daily,
-                      backgroundColor: palette(1)[0],
-                    },
-                  ],
-                },
+                data: { labels, datasets },
                 options: {
                   responsive: true,
                   maintainAspectRatio: false,
+                  interaction: { mode: "index", intersect: false },
                   scales: {
-                    x: { grid: { color: grid }, ticks: { color: text } },
-                    y: { grid: { color: grid }, ticks: { color: text } },
+                    x: { grid: { color: grid }, ticks: { color: text }, stacked: true },
+                    y: { grid: { color: grid }, ticks: { color: text }, stacked: true },
                   },
                   plugins: {
                     legend: { labels: { color: text } },
                     tooltip: {
-                      callbacks: { label: (c) => ` ${fmtMoney(c.parsed.y)}` },
+                      // Show all categories for the hovered day
+                      filter: (item) => (item.parsed.y || 0) !== 0,
+                      callbacks: {
+                        title: (items) => {
+                          const idx = items?.[0]?.dataIndex ?? 0;
+                          const dt = new Date(startMid.getTime() + idx * dayMs);
+                          const y = dt.getFullYear();
+                          const m = String(dt.getMonth() + 1).padStart(2, "0");
+                          const d = String(dt.getDate()).padStart(2, "0");
+                          const dayNo = idx + 1;
+                          return `${y}-${m}-${d} (Day ${dayNo})`;
+                        },
+                        label: (c) => ` ${c.dataset.label}: ${fmtMoney(c.parsed.y)}`,
+                        footer: (items) => {
+                          const sum = items.reduce((s, it) => s + (it.parsed.y || 0), 0);
+                          return `Total: ${fmtMoney(sum)}`;
+                        },
+                      },
                     },
                   },
                 },
@@ -1152,6 +1231,7 @@
             expenses,
             total,
             categorySummary,
+            categoryOptions,
             monthTotal,
             topCategoryName,
             topCategoryTotal,
